@@ -338,6 +338,40 @@ class DatabaseTests(unittest.TestCase):
         self.assertIn("पहचान दस्तावेज़", hindi)
         self.assertNotEqual(telugu, hindi)
 
+    def test_assistant_understands_localized_application_questions_without_inventing_benefit_amounts(self):
+        application_questions = (
+            (
+                "English",
+                "How do I apply for crop loss assistance?",
+                "Record the affected crop and dates",
+            ),
+            (
+                "Telugu",
+                "పంట దెబ్బతింది, సహాయం కోసం ఎలా దరఖాస్తు చేయాలి?",
+                "ప్రభావిత పంట, తేదీలను నమోదు",
+            ),
+            (
+                "Hindi",
+                "फसल खराब हो गई, सहायता के लिए आवेदन कैसे करें?",
+                "प्रभावित फसल और तारीख लिखें",
+            ),
+        )
+        for language, question, expected_guidance in application_questions:
+            with self.subTest(language=language):
+                reply = rules.assistant_reply(question, language)
+                self.assertIn(expected_guidance, reply)
+                self.assertNotIn("Available local demonstration schemes", reply)
+
+        amount_questions = (
+            ("English", "What compensation amount is available for crop loss?", "verified benefit amount"),
+            ("Telugu", "పంట నష్టానికి ఎంత పరిహారం అందుతుంది?", "ధృవీకరించిన ప్రయోజన మొత్తం లేదు"),
+            ("Hindi", "फसल नुकसान का मुआवज़ा कितना है?", "सत्यापित राशि उपलब्ध नहीं है"),
+        )
+        for language, question, expected_limitation in amount_questions:
+            with self.subTest(language=language):
+                reply = rules.assistant_reply(question, language)
+                self.assertIn(expected_limitation, reply)
+
     def test_assistant_has_localized_unknowns_and_rejects_empty_text(self):
         for language, marker in (
             ("English", "cannot answer"),

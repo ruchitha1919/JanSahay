@@ -212,14 +212,11 @@ def render(language: str) -> None:
 
           function matchingVoice() {{
             return new Promise(resolve => {{
-              const language = settings.locale.split("-")[0].toLowerCase();
               const deadline = Date.now() + 2000;
               function find() {{
                 const voices = synthesis.getVoices();
                 const exact = voices.find(voice => voice.lang.toLowerCase() === settings.locale.toLowerCase());
                 if (exact) return resolve(exact);
-                const sameLanguage = voices.find(voice => voice.lang.toLowerCase().split("-")[0] === language);
-                if (sameLanguage) return resolve(sameLanguage);
                 if (Date.now() >= deadline) return resolve(null);
                 window.setTimeout(find, 100);
               }}

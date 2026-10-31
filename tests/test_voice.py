@@ -12,6 +12,12 @@ class PageReaderTests(unittest.TestCase):
 const vm = require("node:vm");
 const source = process.argv[1];
 const scenario = process.argv[2];
+const selectedLocale = process.argv[3];
+const stoppedMessage = {
+  "en-IN": "Page reading stopped.",
+  "te-IN": "పేజీ పఠనం ఆపబడింది.",
+  "hi-IN": "पृष्ठ पढ़ना रोक दिया गया।",
+}[selectedLocale];
 const calls = { spoken: [], cancelled: 0, observers: [], handlers: {} };
 
 function element(tagName, children = [], options = {}) {
@@ -86,9 +92,11 @@ const document = {
   },
 };
 
-const availableVoices = scenario === "unavailable" || scenario === "async"
+const availableVoices = scenario === "async"
   ? []
-  : [{ lang: "te-IN" }, { lang: "en-US" }];
+  : scenario === "unavailable"
+    ? [{ lang: "en-US" }]
+    : [{ lang: selectedLocale }];
 let voiceLoadPolls = 0;
 const synthesis = {
   getVoices() { return availableVoices; },
@@ -121,7 +129,7 @@ const context = {
     clearInterval() {},
     setTimeout(callback) {
       voiceLoadPolls += 1;
-      if (scenario === "async" && voiceLoadPolls === 3) availableVoices.push({ lang: "te-IN" });
+      if (scenario === "async" && voiceLoadPolls === 3) availableVoices.push({ lang: selectedLocale });
       callback();
     },
     addEventListener() {},
@@ -145,26 +153,26 @@ vm.runInNewContext(source, context);
     if ((utterance.text.match(/Open/g) || []).length !== 2) {
       throw new Error("meaningful repeated values from separate table rows were dropped");
     }
-    if (utterance.lang !== "te-IN" || utterance.voice.lang !== "te-IN") {
+    if (utterance.lang !== selectedLocale || utterance.voice.lang !== selectedLocale) {
       throw new Error("speech did not use the matching selected-language voice");
     }
     await calls.handlers.read();
     if (calls.spoken.length !== 2 || calls.cancelled < 2) throw new Error("repeated start did not cancel prior speech");
     calls.handlers.stop();
-    if (calls.cancelled < 3 || status.textContent !== "పేజీ పఠనం ఆపబడింది.") {
+    if (calls.cancelled < 3 || status.textContent !== stoppedMessage) {
       throw new Error("stop did not cancel speech and report its state");
     }
   } else if (scenario === "navigation") {
     main.childNodes[0] = element("h1", [text("Different page")]);
     main.childNodes[0].parentElement = main;
     calls.observers[0].callback();
-    if (calls.cancelled < 2 || status.textContent !== "పేజీ పఠనం ఆపబడింది.") {
+    if (calls.cancelled < 2 || status.textContent !== stoppedMessage) {
       throw new Error("page change did not cancel speech");
     }
   } else if (scenario === "unavailable") {
     if (calls.spoken.length !== 0 ||
-        status.textContent !== "తెలుగు వాయిస్ అందుబాటులో లేదు. పేజీ పాఠ్యాన్ని చదవలేదు.") {
-      throw new Error("missing language voice did not prevent speech and report the limitation");
+        status.textContent !== "No English voice is available. Page text was not spoken.") {
+      throw new Error("missing exact-locale voice did not prevent speech and report the limitation");
     }
   }
 })().catch(error => {
@@ -181,8 +189,9 @@ vm.runInNewContext(source, context);
     def _run_reader_scenario(self, language, scenario):
         rendered = self._rendered_html(language)
         script = rendered.split("<script>", 1)[1].split("</script>", 1)[0]
+        locale = {"English": "en-IN", "Telugu": "te-IN", "Hindi": "hi-IN"}[language]
         result = subprocess.run(
-            ["node", "-e", self._NODE_READER_HARNESS, script, scenario],
+            ["node", "-e", self._NODE_READER_HARNESS, script, scenario, locale],
             capture_output=True,
             text=True,
             check=False,
@@ -191,9 +200,9 @@ vm.runInNewContext(source, context);
 
     def test_reader_controls_and_unavailable_voice_messages_are_localized(self):
         expected = {
-            "English": ("Page reader", "Read this page", "No English voice is available. Page text was not spoken."),
-            "Telugu": ("పేజీ పఠనం", "ఈ పేజీని చదవండి", "తెలుగు వాయిస్ అందుబాటులో లేదు. పేజీ పాఠ్యాన్ని చదవలేదు."),
-            "Hindi": ("पृष्ठ पाठक", "यह पृष्ठ पढ़ें", "हिंदी आवाज़ उपलब्ध नहीं है। पृष्ठ का पाठ नहीं पढ़ा गया।"),
+            "English": ("Page reader", "Read this page", "No English voice is available. Page text was not spoken.", "en-IN"),
+            "Telugu": ("పేజీ పఠనం", "ఈ పేజీని చదవండి", "తెలుగు వాయిస్ అందుబాటులో లేదు. పేజీ పాఠ్యాన్ని చదవలేదు.", "te-IN"),
+            "Hindi": ("पृष्ठ पाठक", "यह पृष्ठ पढ़ें", "हिंदी आवाज़ उपलब्ध नहीं है। पृष्ठ का पाठ नहीं पढ़ा गया।", "hi-IN"),
         }
         for language, labels in expected.items():
             with self.subTest(language=language):
@@ -205,6 +214,7 @@ vm.runInNewContext(source, context);
                     .split(";\n          const copy", 1)[0]
                 )
                 self.assertEqual(script_settings["copy"]["matching_voice_unavailable"], labels[2])
+                self.assertEqual(script_settings["locale"], labels[3])
                 self.assertIn('id="js-voice-read"', rendered)
                 self.assertIn('id="js-voice-stop"', rendered)
                 self.assertNotIn("js-voice-mic", rendered)
@@ -227,7 +237,6 @@ vm.runInNewContext(source, context);
         rendered = self._rendered_html("Telugu")
         for evidence in (
             "voice.lang.toLowerCase() === settings.locale.toLowerCase()",
-            "voice.lang.toLowerCase().split",
             "speech.lang = settings.locale",
             "speech.voice = voice",
             "copy.matching_voice_unavailable",
@@ -238,11 +247,14 @@ vm.runInNewContext(source, context);
         ):
             with self.subTest(evidence=evidence):
                 self.assertIn(evidence, rendered)
+        self.assertNotIn("sameLanguage", rendered)
         self.assertNotIn("|| voices[0]", rendered)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required to exercise embedded reader behavior")
-    def test_reader_runtime_reads_visible_content_and_cancels_repeated_start_and_stop(self):
-        self._run_reader_scenario("Telugu", "read")
+    def test_reader_runtime_uses_exact_locale_for_each_supported_language(self):
+        for language in ("English", "Telugu", "Hindi"):
+            with self.subTest(language=language):
+                self._run_reader_scenario(language, "read")
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required to exercise embedded reader behavior")
     def test_reader_runtime_waits_for_asynchronously_loaded_matching_voice(self):
@@ -254,7 +266,7 @@ vm.runInNewContext(source, context);
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required to exercise embedded reader behavior")
     def test_reader_runtime_reports_missing_matching_language_voice(self):
-        self._run_reader_scenario("Telugu", "unavailable")
+        self._run_reader_scenario("English", "unavailable")
 
     def test_invalid_reader_language_is_rejected(self):
         with self.assertRaises(ValueError):

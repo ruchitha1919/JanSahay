@@ -401,6 +401,16 @@ def assistant_reply(
     localize = lambda text: i18n.translate_text(text, language)
     selected_scheme = _assistant_scheme(normalized, language)
     if any(term in normalized for term in (
+        "compensation", "benefit amount", "subsidy amount", "grant amount",
+        "payment amount", "payout", "how much money",
+        "పరిహారం", "సహాయ మొత్తం", "సబ్సిడీ మొత్తం", "చెల్లింపు మొత్తం",
+        "मुआवज़ा", "मुआवजा", "लाभ राशि", "सब्सिडी राशि", "भुगतान राशि",
+    )):
+        guidance = localize(
+            "This local demo does not contain a verified benefit amount. "
+            "Confirm payments or compensation with an authorized source."
+        )
+    elif any(term in normalized for term in (
         "document", "paper", "checklist", "పత్ర", "పాస్‌బుక్", "दस्तावेज", "कागज़",
     )):
         if any(term in normalized for term in (
@@ -429,8 +439,10 @@ def assistant_reply(
             )
     elif any(term in normalized for term in (
         "status", "request", "case", "tracking", "స్థితి", "అభ్యర్థన", "కేసు",
-        "स्थिति", "अनुरोध", "केस", "application", "progress", "stage",
-        "దరఖాస్తు", "పురోగతి", "దశ", "आवेदन", "प्रगति", "चरण",
+        "स्थिति", "अनुरोध", "केस", "application status", "application progress",
+        "progress", "stage", "దరఖాస్తు స్థితి", "దరఖాస్తు పురోగతి",
+        "పురోగతి", "దశ", "आवेदन स्थिति", "आवेदन की स्थिति", "आवेदन प्रगति",
+        "प्रगति", "चरण",
     )):
         if cases:
             summaries = []
@@ -446,6 +458,18 @@ def assistant_reply(
         eligibility_terms = (
             "eligible", "eligibility", "అర్హత", "పాత్ర", "पात्र", "पात्रता",
         )
+        application_terms = (
+            "apply", "application process", "how do i apply", "how to apply",
+            "submit", "procedure", "steps", "దరఖాస్తు", "సమర్పించ", "విధానం", "చర్యలు",
+            "आवेदन", "जमा करें", "प्रक्रिया", "चरण",
+        )
+        if any(term in normalized for term in application_terms):
+            guidance = (
+                f"{localize(str(selected_scheme['name']))}: "
+                f"{localize(str(selected_scheme['procedure']))} "
+                f"{localize(str(selected_scheme['assistance']))}"
+            )
+            return prefix + guidance
         eligibility_note = (
             " " + localize(
                 "Use Scheme Finder to compare your profile with these demonstration rules."
@@ -493,7 +517,7 @@ def _assistant_scheme(message: str, language: str) -> dict[str, object] | None:
     keywords = {
         "Small Farmer Input Support": (
             "small farmer", "input support", "seeds", "fertilizer", "చిన్న రైతు",
-            "छोटे किसान", "बीज", "उर्वरक",
+            "విత్తనాలు", "ఎరువులు", "छोटे किसान", "बीज", "उर्वरक", "खाद",
         ),
         "Agricultural Subsidy Assistance": (
             "agricultural subsidy", "equipment subsidy", "farm subsidy", "సబ్సిడీ",
@@ -508,8 +532,10 @@ def _assistant_scheme(message: str, language: str) -> dict[str, object] | None:
             "రైతు పత్రాలు", "किसान दस्तावेज़", "दस्तावेज़ सहायता",
         ),
         "Crop Assistance Support": (
-            "crop loss", "crop assistance", "పంట నష్టం", "పంట సహాయం",
-            "फसल नुकसान", "फसल सहायता",
+            "crop loss", "crop assistance", "crop damage", "damaged crop",
+            "crop damaged", "failed harvest", "పంట నష్టం", "పంట సహాయం",
+            "పంట దెబ్బ", "పంట పాడై", "फसल नुकसान", "फसल सहायता",
+            "फसल खराब", "फसल बर्बाद", "फसल क्षति",
         ),
     }
     for scheme in SCHEMES:
