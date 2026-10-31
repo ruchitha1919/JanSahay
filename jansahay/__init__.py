@@ -1,0 +1,1 @@
+"""Local services for the JanSahay prototype."""

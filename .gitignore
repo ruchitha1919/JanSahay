@@ -1,0 +1,34 @@
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environment
+.venv/
+venv/
+
+# Environment variables and secrets
+.env
+.env.*
+
+# IDE
+.vscode/
+
+# Temporary files
+.DS_Store
+*.log
+
+# Local databases and uploaded files
+*.db
+*.sqlite
+*.sqlite3
+uploads/
+
+# BMAD working files
+_bmad/
+_bmad-output/
+
+# Test cache
+.pytest_cache/
+.coverage
