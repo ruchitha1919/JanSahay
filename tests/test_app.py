@@ -55,9 +55,14 @@ class PortalTests(unittest.TestCase):
                 app = self._login_citizen(language)
                 self.assertEqual(app.session_state["language"], language)
                 expected_voice_title = {
-                    "English": "Voice assistant",
-                    "Telugu": "వాయిస్ సహాయకుడు",
-                    "Hindi": "वॉइस सहायक",
+                    "English": "Page reader",
+                    "Telugu": "పేజీ పఠనం",
+                    "Hindi": "पृष्ठ पाठक",
+                }[language]
+                expected_reader_action = {
+                    "English": "Read this page",
+                    "Telugu": "ఈ పేజీని చదవండి",
+                    "Hindi": "यह पृष्ठ पढ़ें",
                 }[language]
                 self.assertEqual(
                     list(app.selectbox[0].options),
@@ -70,7 +75,7 @@ class PortalTests(unittest.TestCase):
                     self.assertEqual(app.title[0].value, expected_title)
                     self.assertEqual(app.session_state["language"], language)
                     self.assertTrue(any(
-                        expected_voice_title in item.value
+                        expected_voice_title in item.value and expected_reader_action in item.value
                         for item in app.html
                     ))
 
@@ -123,15 +128,44 @@ class PortalTests(unittest.TestCase):
         self.assertTrue(any("Recommended action:" in item.value for item in app.markdown))
         self.assertTrue(any("password" in item.value for item in app.warning))
 
+    def test_claim_check_localizes_result_for_selected_language(self):
+        app = self._login_citizen("Telugu")
+        app.sidebar.radio[0].set_value(app.sidebar.radio[0].options[3]).run()
+        app.text_area[0].set_value("Please send OTP to get guaranteed approval")
+        next(item for item in app.form_submit_button if "తనిఖీ" in item.label).click().run()
+        self.assertFalse(app.exception)
+        self.assertIn("అనుమానాస్పదం", [item.value for item in app.subheader])
+        self.assertTrue(any(
+            "ఈ సందేశంలో సాధారణ మోసం సూచన ఉంది" in item.value
+            for item in app.markdown
+        ))
+        self.assertTrue(any("పాస్‌వర్డ్/OTP" in item.value for item in app.warning))
+
+    def test_assistant_uses_and_persists_the_citizens_saved_case_context(self):
+        app = self._login_citizen("Hindi")
+        app.sidebar.radio[0].set_value(app.sidebar.radio[0].options[2]).run()
+        app.chat_input[0].set_value("What is my request status?").run()
+        self.assertFalse(app.exception)
+        history = db.list_interactions("JS-C10245", "assistant", self.database_path)
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["user_input"], "What is my request status?")
+        self.assertIn("JS-CASE1001", history[0]["response"])
+        self.assertIn("स्थानीय नियम", history[0]["response"])
+        self.assertTrue(any("JS-CASE1001" in str(item.value) for item in app.markdown))
+
     def test_volunteer_access_is_separate_from_citizen_login(self):
         app = AppTest.from_file(str(APP_PATH), default_timeout=15).run()
+        self.assertTrue(any("Read this page" in item.value for item in app.html))
         app.selectbox[0].set_value("తెలుగు").run()
         app.text_input[5].set_value("helper123")
         app.form_submit_button[2].click().run()
         self.assertFalse(app.exception)
         self.assertEqual(app.session_state["language"], "Telugu")
         self.assertIn("స్వచ్ఛంద సేవకుల విభాగం", app.sidebar.radio[0].options)
-        self.assertTrue(any("వాయిస్ సహాయకుడు" in item.value for item in app.html))
+        self.assertTrue(any(
+            "పేజీ పఠనం" in item.value and "ఈ పేజీని చదవండి" in item.value
+            for item in app.html
+        ))
 
     def test_ivr_records_volunteer_follow_up(self):
         app = self._login_citizen("Telugu")
@@ -156,11 +190,11 @@ class PortalTests(unittest.TestCase):
         self.assertTrue(phone_link.url.startswith("tel:"))
         self.assertTrue(any("काल्पनिक नमूना नंबर" in item.value for item in app.caption))
 
-    def test_voice_assistant_is_rendered_in_selected_language(self):
+    def test_page_reader_is_rendered_in_selected_language(self):
         for language, expected_title in (
-            ("English", "Voice assistant"),
-            ("Telugu", "వాయిస్ సహాయకుడు"),
-            ("Hindi", "वॉइस सहायक"),
+            ("English", "Page reader"),
+            ("Telugu", "పేజీ పఠనం"),
+            ("Hindi", "पृष्ठ पाठक"),
         ):
             with self.subTest(language=language):
                 app = self._login_citizen(language)

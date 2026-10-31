@@ -194,8 +194,21 @@ class DatabaseTests(unittest.TestCase):
             ("JanSahay is an official government portal", "FALSE"),
             ("JanSahay prototype uses local demo data", "VERIFIED"),
             ("Please send OTP to get guaranteed approval", "SUSPICIOUS"),
+            ("Please send me your OTP", "SUSPICIOUS"),
+            ("They ask for your OTP", "SUSPICIOUS"),
             ("Pay Rs 500 to activate the farmer benefit", "SUSPICIOUS"),
+            ("OTP बताइए और लाभ पाएँ", "SUSPICIOUS"),
+            ("OTP చెప్పండి, సహాయం పొందండి", "SUSPICIOUS"),
             ("What is the current application deadline?", "UNVERIFIED"),
+            ("Do not share your OTP or pay an upfront fee", "UNVERIFIED"),
+            ("We do not ask for your password but request your OTP", "SUSPICIOUS"),
+            ("कृपया ओटीपी साझा न करें", "UNVERIFIED"),
+            ("ఓటీపీని పంచుకోవద్దు", "UNVERIFIED"),
+            ("JanSahay is not an official government portal", "VERIFIED"),
+            ("JanSahay isn't an official government portal", "VERIFIED"),
+            ("JanSahay is an official government portal; it is not an official government portal", "UNVERIFIED"),
+            ("It is not true that JanSahay prototype uses local demo data", "UNVERIFIED"),
+            ("A new scheme starts tomorrow", "UNVERIFIED"),
         )
         for claim, expected in examples:
             with self.subTest(claim=claim):
@@ -208,6 +221,28 @@ class DatabaseTests(unittest.TestCase):
                 self.assertEqual(result["evidence_links"], [])
         with self.assertRaises(ValueError):
             rules.verify_claim("  ")
+
+    def test_claim_results_are_localized_without_changing_canonical_status(self):
+        telugu = rules.verify_claim(
+            "Please send OTP to get guaranteed approval", "Telugu"
+        )
+        hindi = rules.verify_claim(
+            "Please send OTP to get guaranteed approval", "Hindi"
+        )
+        self.assertEqual(telugu["status"], "SUSPICIOUS")
+        self.assertEqual(hindi["status"], "SUSPICIOUS")
+        self.assertNotEqual(telugu["explanation"], hindi["explanation"])
+        self.assertNotIn("The message contains a common scam indicator", telugu["explanation"])
+        self.assertNotIn("The message contains a common scam indicator", hindi["explanation"])
+
+    def test_uploaded_text_claim_uses_supported_document_extraction(self):
+        uploaded_text = rules.extract_document(
+            "claim.txt",
+            b"JanSahay is an official government portal",
+        )
+        result = rules.verify_claim(uploaded_text)
+        self.assertEqual(result["status"], "FALSE")
+        self.assertIn("independent demonstration prototype", result["explanation"])
 
     def test_document_extraction_and_errors(self):
         text = rules.extract_document("notice.txt", b"Hearing notice for land survey 12.")
@@ -249,11 +284,69 @@ class DatabaseTests(unittest.TestCase):
                 with self.assertRaises(rules.DocumentError):
                     rules.extract_document(file_name, content)
 
-    def test_assistant_has_english_and_telugu_demo_responses(self):
-        english = rules.assistant_reply("What documents should I bring?", "English")
-        telugu = rules.assistant_reply("documents", "Telugu")
-        self.assertIn("bank passbook", english)
-        self.assertIn("ప్రత్యక్ష ప్రభుత్వ సేవ కాదు", telugu)
+    def test_assistant_answers_are_relevant_to_local_scheme_and_case_data(self):
+        schemes = rules.assistant_reply("What documents are needed for farmer document help?")
+        agriculture = rules.assistant_reply("Tell me about crop loss assistance")
+        cases = rules.assistant_reply(
+            "What is my request status?",
+            "English",
+            db.list_cases("JS-C10245", self.database_path),
+        )
+        application_progress = rules.assistant_reply(
+            "What is my application progress?",
+            "English",
+            db.list_cases("JS-C10245", self.database_path),
+        )
+        no_case_documents = rules.assistant_reply(
+            "Which documents are required for my case?",
+            "English",
+            [],
+        )
+        eligibility = rules.assistant_reply("Am I eligible?")
+        services = rules.assistant_reply("What services are available?", "Hindi")
+        unknown = rules.assistant_reply("Who won a local election yesterday?")
+
+        self.assertIn("Identity document", schemes)
+        self.assertIn("Crop Assistance Support", agriculture)
+        self.assertIn("JS-CASE1001", cases)
+        self.assertIn("Profile review", cases)
+        self.assertIn("JS-CASE1001", application_progress)
+        self.assertIn("No saved local requests", no_case_documents)
+        self.assertNotIn("Identity document", no_case_documents)
+        self.assertIn("Scheme Finder", eligibility)
+        self.assertIn("फ़ॉर्म सहायता", services)
+        self.assertIn("cannot answer", unknown.casefold())
+
+    def test_assistant_uses_saved_case_document_checklists_for_case_questions(self):
+        cases = db.list_cases("JS-C10245", self.database_path)
+        reply = rules.assistant_reply(
+            "Which documents are required for my case?",
+            "English",
+            cases,
+        )
+        self.assertIn("JS-CASE1001", reply)
+        self.assertIn("Aadhaar copy", reply)
+        self.assertIn("Land notice", reply)
+
+    def test_assistant_localizes_all_supported_languages(self):
+        message = "Which documents are needed for farmer assistance?"
+        english = rules.assistant_reply(message, "English")
+        telugu = rules.assistant_reply(message, "Telugu")
+        hindi = rules.assistant_reply(message, "Hindi")
+        self.assertIn("Identity document", english)
+        self.assertIn("గుర్తింపు పత్రం", telugu)
+        self.assertIn("पहचान दस्तावेज़", hindi)
+        self.assertNotEqual(telugu, hindi)
+
+    def test_assistant_has_localized_unknowns_and_rejects_empty_text(self):
+        for language, marker in (
+            ("English", "cannot answer"),
+            ("Telugu", "సమాధానం ఇవ్వలేను"),
+            ("Hindi", "जवाब नहीं दे सकता"),
+        ):
+            with self.subTest(language=language):
+                reply = rules.assistant_reply("What is the moon made of?", language)
+                self.assertIn(marker, reply)
         with self.assertRaises(ValueError):
             rules.assistant_reply("  ", "English")
 

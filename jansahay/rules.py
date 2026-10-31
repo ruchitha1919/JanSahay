@@ -6,6 +6,8 @@ from io import BytesIO
 from pathlib import Path
 import re
 
+from . import i18n
+
 MAX_DOCUMENT_BYTES = 5 * 1024 * 1024
 MAX_PDF_PAGES = 30
 
@@ -224,71 +226,106 @@ def check_eligibility(scheme_name: str, profile: dict[str, object]) -> dict[str,
     }
 
 
-def verify_claim(claim: str) -> dict[str, object]:
+def verify_claim(claim: str, language: str = "English") -> dict[str, object]:
     cleaned = " ".join(claim.split())
     if not cleaned:
         raise ValueError("Enter a claim to check.")
+    if language not in i18n.LANGUAGES:
+        raise ValueError("Choose English, Telugu, or Hindi.")
     normalized = cleaned.casefold()
 
-    known_claims = (
-        (
-            ("jansahay is not an official government portal", "jansahay is not an official government service"),
+    positive_official = re.search(
+        r"\bjansahay\b[^.!?]{0,35}\b(?:is|acts as|operates as)\b"
+        r"(?!\s+(?:not|never)\b|['’]t\b)"
+        r"[^.!?]{0,35}\b(?:an?\s+)?(?:official\s+)?(?:live\s+)?government\s+"
+        r"(?:portal|website|service)\b",
+        normalized,
+    )
+    negative_official = re.search(
+        r"\bjansahay\b[^.!?]{0,35}\b(?:is not|isn't|isnt|never was)\b"
+        r"[^.!?]{0,35}\b(?:an?\s+)?(?:official\s+)?(?:live\s+)?government\s+"
+        r"(?:portal|website|service)\b",
+        normalized,
+    )
+    negative_reference = re.search(
+        r"\b(?:it|this|that)\s+(?:is not|isn't|isnt|never was)\b"
+        r"[^.!?]{0,35}\b(?:an?\s+)?(?:official\s+)?(?:live\s+)?government\s+"
+        r"(?:portal|website|service)\b",
+        normalized,
+    )
+    if positive_official and (negative_official or negative_reference):
+        return _claim_result(
+            "UNVERIFIED",
+            "The message makes conflicting statements about JanSahay's status.",
+            ["Conflicting wording cannot be resolved by this local demonstration."],
+            [],
+            "Check the service's independently confirmed official address.",
+            language,
+        )
+    if negative_official:
+        return _claim_result(
             "VERIFIED",
             "This matches the local prototype's stated independent, demonstration-only status.",
             ["The application identifies itself as an independent local prototype."],
             [],
             "Do not treat this local result as government verification.",
-        ),
-        (
-            ("jansahay prototype uses local demo data",),
-            "VERIFIED",
-            "This matches how the local JanSahay application is configured.",
-            ["This prototype stores its demonstration records in a local SQLite database."],
-            [],
-            "This confirms only the local demo behavior; it does not verify a government scheme.",
-        ),
-        (
-            ("jansahay is a live government portal",),
-            "FALSE",
-            "The application is a local demonstration and is not connected to live government systems.",
-            ["The app uses local SQLite data and has no live government integration."],
-            [],
-            "Use an official government source to confirm services or application status.",
-        ),
-        (
-            ("jansahay is an official government portal", "jansahay is an official government website"),
+            language,
+        )
+    if positive_official:
+        return _claim_result(
             "FALSE",
             "JanSahay in this project is an independent demonstration prototype, not an official government portal.",
             ["The application identifies itself as an independent local prototype."],
             [],
             "Do not submit sensitive details through a site unless you independently confirm its official address.",
-        ),
+            language,
+        )
+    supported_local_data = re.search(
+        r"\bjansahay prototype uses local demo data\b",
+        normalized,
     )
-    for phrases, status, explanation, reasons, indicators, action in known_claims:
-        if any(phrase in normalized for phrase in phrases):
-            return _claim_result(status, explanation, reasons, indicators, action)
+    negated_local_data = re.search(
+        r"\b(?:not|never|false)\b[^.!?]{0,40}\bjansahay prototype uses local demo data\b",
+        normalized,
+    )
+    if supported_local_data and not negated_local_data:
+        return _claim_result(
+            "VERIFIED",
+            "This matches how the local JanSahay application is configured.",
+            ["This prototype stores its demonstration records in a local SQLite database."],
+            [],
+            "This confirms only the local demo behavior; it does not verify a government scheme.",
+            language,
+        )
 
     suspicious_patterns = (
-        r"\b(?:send|share|tell|provide|forward)\s+(?:your\s+)?(?:otp|one[- ]time password|password)\b",
-        r"\b(?:pay|transfer|send)\s+(?:an?\s+)?(?:fee|money|payment|amount)\b",
-        r"\b(?:pay|transfer|send)\b.{0,30}(?:\b\d+\b|₹|rs\.?|inr|fee|money|payment|amount)",
-        r"\bguaranteed?\s+(?:approval|benefit|subsidy|payment)\b",
-        r"\b(?:otp|one[- ]time password)\b",
-        r"(?:ఫీజు చెల్లించండి|డబ్బు పంపండి|రుసుము చెల్లించండి|शुल्क जमा करें|पैसे भेजें|रुपये भेजें)",
-        r"(?:ఓటీపీ|ఒటిపి|పాస్‌వర్డ్|డబ్బు పంపండి|शेयर करें.*ओटीपी|ओटीपी|पासवर्ड|पैसे भेजें)",
+        (r"\b(?:send|share|tell|provide|forward|reveal|disclose)\s+(?:(?:me|us)\s+)?(?:(?:your|the)\s+)?(?:otp|one[- ]time password|password)\b", "credential"),
+        (r"\b(?:ask(?:s|ed)?|request(?:s|ed)?)\s+(?:you\s+)?(?:for\s+)?(?:your\s+)?(?:otp|one[- ]time password|password)\b", "credential"),
+        (r"\b(?:pay|transfer|send)\s+(?:an?\s+)?(?:fee|money|payment|amount)\b", "payment"),
+        (r"\b(?:pay|transfer|send)\b.{0,30}(?:\b\d+\b|₹|rs\.?|inr|fee|money|payment|amount)", "payment"),
+        (r"\bguaranteed?\s+(?:approval|benefit|subsidy|payment)\b", "guarantee"),
+        (r"(?:ఫీజు చెల్లించండి|డబ్బు పంపండి|రుసుము చెల్లించండి|शुल्क जमा करें|पैसे भेजें|रुपये भेजें)", "payment"),
+        (r"(?:ఓటీపీ|ఒటిపి|పాస్‌వర్డ్)\s*(?:పంపండి|పంచండి|చెప్పండి|ఇవ్వండి|తెలియజేయండి)", "credential"),
+        (r"(?:పంపండి|పంచండి|చెప్పండి|ఇవ్వండి).{0,20}(?:ఓటీపీ|ఒటిపి|పాస్‌వర్డ్)", "credential"),
+        (r"(?:ओटीपी|पासवर्ड)\s+(?:भेजें|दें|साझा करें|बताएँ)", "credential"),
+        (r"(?:भेजें|दें|साझा करें|बताएँ).{0,20}(?:ओटीपी|पासवर्ड)", "credential"),
+        (r"\b(?:otp|one[- ]time password|password)\b\s*(?:भेजें|दें|साझा करें|बताइए|बताएं|माँगें|मांगे)", "credential"),
+        (r"\b(?:otp|one[- ]time password|password)\b\s*(?:పంపండి|పంచండి|చెప్పండి|ఇవ్వండి|అడగండి)", "credential"),
     )
-    matched_indicators = [
-        pattern
-        for pattern in suspicious_patterns
-        if re.search(pattern, normalized, re.IGNORECASE)
-    ]
-    if matched_indicators:
+    matched_kinds = set()
+    for pattern, kind in suspicious_patterns:
+        if any(
+            not _is_negated_request(normalized, match.start())
+            for match in re.finditer(pattern, normalized, re.IGNORECASE)
+        ):
+            matched_kinds.add(kind)
+    if matched_kinds:
         reasons = []
-        if any(term in normalized for term in ("otp", "one-time password", "password", "ఓటీపీ", "పాస్‌వర్డ్", "ओटीपी", "पासवर्ड")):
+        if "credential" in matched_kinds:
             reasons.append("The message asks for a one-time password or other sensitive credential.")
-        if any(term in normalized for term in ("pay", "transfer", "fee", "payment", "money", "డబ్బు", "पैसे")):
+        if "payment" in matched_kinds:
             reasons.append("The message asks for money or an upfront fee.")
-        if "guaranteed" in normalized:
+        if "guarantee" in matched_kinds:
             reasons.append("The message promises a guaranteed approval or benefit.")
         return _claim_result(
             "SUSPICIOUS",
@@ -296,6 +333,7 @@ def verify_claim(claim: str) -> dict[str, object]:
             reasons,
             ["Request for a password/OTP, money, or guaranteed benefit."],
             "Do not pay or share OTPs, passwords, or bank details. Confirm the claim through a trusted official channel.",
+            language,
         )
 
     return _claim_result(
@@ -304,7 +342,15 @@ def verify_claim(claim: str) -> dict[str, object]:
         ["No matching curated demonstration claim or reliable external evidence was found."],
         [],
         "Do not forward the message as fact. Check an official government source or ask a trusted local service desk.",
+        language,
     )
+
+
+def _is_negated_request(text: str, match_start: int) -> bool:
+    prefix = text[max(0, match_start - 70):match_start]
+    clause = re.split(r"[.!?;,]", prefix)[-1]
+    clause = re.split(r"\b(?:but|however|instead|yet)\b", clause)[-1]
+    return bool(re.search(r"\b(?:do not|don't|dont|never|not|avoid|no)\b", clause))
 
 
 def _claim_result(
@@ -313,41 +359,166 @@ def _claim_result(
     reasons: list[str],
     scam_indicators: list[str],
     recommended_action: str,
+    language: str = "English",
 ) -> dict[str, object]:
+    localize = lambda text: i18n.translate_text(text, language)
     return {
         "status": status,
-        "explanation": explanation,
-        "reasons": reasons,
-        "evidence": ["Local JanSahay prototype rules only; no external source was checked."],
+        "explanation": localize(explanation),
+        "reasons": [localize(reason) for reason in reasons],
+        "evidence": [localize("Local JanSahay prototype rules only; no external source was checked.")],
         "evidence_links": [],
-        "scam_indicators": scam_indicators,
-        "recommended_action": recommended_action,
+        "scam_indicators": [localize(indicator) for indicator in scam_indicators],
+        "recommended_action": localize(recommended_action),
         "live_verification": False,
     }
 
 
-def assistant_reply(message: str, language: str = "English") -> str:
+def assistant_reply(
+    message: str,
+    language: str = "English",
+    cases: list[dict[str, object]] | None = None,
+) -> str:
     if not message.strip():
         raise ValueError("Type a question for the demo assistant.")
-    normalized = message.casefold()
-    if language.casefold() == "telugu":
-        if any(term in normalized for term in ("document", "paper", "పత్రం", "పత్రాలు")):
-            guidance = "పథకం ప్రకారం ఆధార్ ప్రతిని, భూమి రికార్డు లేదా బ్యాంక్ పాస్‌బుక్ అవసరం కావచ్చు. అభ్యర్థన పత్రాల జాబితాను చూడండి."
-        elif any(term in normalized for term in ("status", "request", "అభ్యర్థన")):
-            guidance = "మీ అభ్యర్థన దశ మరియు పెండింగ్ పత్రాల కోసం అభ్యర్థనల విభాగాన్ని తెరవండి."
-        else:
-            guidance = "పథక అర్హత కోసం Scheme Finder ను తెరవండి. రైతు సహాయం డెమోలో ఆదాయం మరియు భూమి పరిమితులు ఉన్నాయి."
-        return f"డెమో సహాయకుడు: {guidance} ఇది నియమాల ఆధారిత నమూనా మాత్రమే; ప్రత్యక్ష ప్రభుత్వ సేవ కాదు."
+    if language not in i18n.LANGUAGES:
+        raise ValueError("Choose English, Telugu, or Hindi.")
 
-    if any(term in normalized for term in ("document", "paper", "checklist")):
-        guidance = "The farmer-support demo may ask for an Aadhaar copy, land record, and bank passbook. Open Request Tracking for your case checklist."
-    elif any(term in normalized for term in ("status", "request", "case")):
-        guidance = "Open Request Tracking to see each request's stage, status, and submitted or pending documents."
-    elif any(term in normalized for term in ("eligible", "eligibility", "scheme")):
-        guidance = "Open Scheme Finder to compare your profile with the sample rules. The farmer-support demo checks occupation, income, and land holding."
+    normalized = message.casefold()
+    if language == "Telugu":
+        prefix = "స్థానిక నియమాల ఆధారిత నమూనా సహాయం (ప్రత్యక్ష AI కాదు): "
+        unknown = "స్థానిక నమూనా సమాచారంతో ఈ ప్రశ్నకు సమాధానం ఇవ్వలేను. జాబితాలోని పథకం, పత్రాలు, సేవలు లేదా మీ అభ్యర్థన గురించి అడగండి."
+        labels = {"criteria": "నమూనా అర్హత", "documents": "అవసరమైన పత్రాలు"}
+    elif language == "Hindi":
+        prefix = "स्थानीय नियम-आधारित नमूना सहायता (लाइव AI नहीं): "
+        unknown = "स्थानीय नमूना जानकारी से इस सवाल का जवाब नहीं दे सकता। सूचीबद्ध योजना, दस्तावेज़, सेवाओं या अपने अनुरोध के बारे में पूछें।"
+        labels = {"criteria": "नमूना पात्रता", "documents": "आवश्यक दस्तावेज़"}
     else:
-        guidance = "Ask about scheme eligibility, required documents, or request status, or choose the matching section in the portal."
-    return f"Rule-based demo assistant: {guidance} This is not a live government service."
+        prefix = "Local rule-based demo guidance (not live AI): "
+        unknown = "I cannot answer that from the local demo data. Ask about a listed demonstration scheme, documents, services, or your saved request."
+        labels = {"criteria": "Demonstration criteria", "documents": "Required documents"}
+
+    localize = lambda text: i18n.translate_text(text, language)
+    selected_scheme = _assistant_scheme(normalized, language)
+    if any(term in normalized for term in (
+        "document", "paper", "checklist", "పత్ర", "పాస్‌బుక్", "दस्तावेज", "कागज़",
+    )):
+        if any(term in normalized for term in (
+            "request", "case", "my request", "my case", "అభ్యర్థన", "కేసు", "अनुरोध", "केस",
+        )):
+            if cases:
+                summaries = []
+                for case in cases:
+                    docs = ", ".join(
+                        localize(str(item)) for item in case.get("required_documents", [])
+                    ) or localize("No documents are listed.")
+                    summaries.append(
+                        f"{case.get('case_id', '')} · {localize(str(case.get('title', '')))}: {docs}"
+                    )
+                guidance = localize("Documents listed in your saved requests: ") + " | ".join(summaries)
+            else:
+                guidance = localize("No saved local requests were found for this account.")
+        else:
+            scheme = selected_scheme or next(
+                item for item in SCHEMES if item["name"] == "Farmer Document Assistance"
+            )
+            documents = ", ".join(localize(str(item)) for item in scheme["documents"])
+            guidance = (
+                f"{localize(str(scheme['name']))}: {labels['documents']}: {documents}. "
+                + localize("This is a local demonstration checklist, not an official requirement.")
+            )
+    elif any(term in normalized for term in (
+        "status", "request", "case", "tracking", "స్థితి", "అభ్యర్థన", "కేసు",
+        "स्थिति", "अनुरोध", "केस", "application", "progress", "stage",
+        "దరఖాస్తు", "పురోగతి", "దశ", "आवेदन", "प्रगति", "चरण",
+    )):
+        if cases:
+            summaries = []
+            for case in cases:
+                status = localize(str(case.get("status", "")))
+                title = localize(str(case.get("title", "")))
+                stage = localize(str(case.get("stage", "")))
+                summaries.append(f"{case.get('case_id', '')} · {title} — {status}; {stage}")
+            guidance = localize("Saved local requests: ") + " | ".join(summaries)
+        else:
+            guidance = localize("No saved local requests were found for this account.")
+    elif selected_scheme is not None:
+        eligibility_terms = (
+            "eligible", "eligibility", "అర్హత", "పాత్ర", "पात्र", "पात्रता",
+        )
+        eligibility_note = (
+            " " + localize(
+                "Use Scheme Finder to compare your profile with these demonstration rules."
+            )
+            if any(term in normalized for term in eligibility_terms)
+            else ""
+        )
+        guidance = (
+            f"{localize(str(selected_scheme['name']))}: "
+            f"{localize(str(selected_scheme['description']))} "
+            f"{labels['criteria']}: {localize(str(selected_scheme['criteria']))} "
+            f"{labels['documents']}: "
+            f"{', '.join(localize(str(item)) for item in selected_scheme['documents'])}."
+            f"{eligibility_note}"
+        )
+    elif any(term in normalized for term in (
+        "eligible", "eligibility", "అర్హత", "పాత్ర", "पात्र", "पात्रता",
+    )):
+        guidance = localize(
+            "I cannot assess personal eligibility without a selected scheme and profile. "
+            "Open Scheme Finder to compare your details with local demonstration rules."
+        )
+    elif any(term in normalized for term in (
+        "scheme", "eligible", "eligibility", "farmer", "agriculture", "crop",
+        "పథక", "అర్హత", "రైతు", "వ్యవసాయ", "పంట", "योजना", "पात्रता", "किसान", "कृषि", "फसल",
+    )):
+        guidance = localize("Available local demonstration schemes: ") + "; ".join(
+            f"{localize(str(item['name']))} — {localize(str(item['description']))}"
+            for item in SCHEMES
+        )
+    elif any(term in normalized for term in (
+        "service", "office", "directory", "సేవ", "కార్యాలయ", "सेवा", "कार्यालय",
+    )):
+        guidance = localize("Sample local service listings: ") + "; ".join(
+            f"{localize(str(item['name']))} ({localize(str(item['area']))}) — "
+            f"{localize(str(item['services']))}"
+            for item in SERVICE_DIRECTORY
+        )
+    else:
+        guidance = unknown
+    return prefix + guidance
+
+
+def _assistant_scheme(message: str, language: str) -> dict[str, object] | None:
+    keywords = {
+        "Small Farmer Input Support": (
+            "small farmer", "input support", "seeds", "fertilizer", "చిన్న రైతు",
+            "छोटे किसान", "बीज", "उर्वरक",
+        ),
+        "Agricultural Subsidy Assistance": (
+            "agricultural subsidy", "equipment subsidy", "farm subsidy", "సబ్సిడీ",
+            "వ్యవసాయ సబ్సిడీ", "कृषि सब्सिडी", "सब्सिडी",
+        ),
+        "Land Notice Assistance": (
+            "land notice", "revenue notice", "భూ నోటీసు", "భూమి నోటీసు",
+            "भूमि नोटिस", "राजस्व नोटिस",
+        ),
+        "Farmer Document Assistance": (
+            "farmer document", "document help", "document assistance", "పత్రాల సహాయం",
+            "రైతు పత్రాలు", "किसान दस्तावेज़", "दस्तावेज़ सहायता",
+        ),
+        "Crop Assistance Support": (
+            "crop loss", "crop assistance", "పంట నష్టం", "పంట సహాయం",
+            "फसल नुकसान", "फसल सहायता",
+        ),
+    }
+    for scheme in SCHEMES:
+        name = str(scheme["name"])
+        if i18n.translate_text(name, language).casefold() in message:
+            return scheme
+        if any(term in message for term in keywords[name]):
+            return scheme
+    return None
 
 
 def extract_document(file_name: str, content: bytes) -> str:

@@ -410,7 +410,7 @@ def _scheme_finder(citizen: dict[str, object]) -> None:
 
 def _assistant(citizen: dict[str, object], language: str) -> None:
     st.title("JanSahay assistant")
-    st.markdown('<p class="lede">A bilingual, rule-based demo. No live AI or government systems are connected.</p>', unsafe_allow_html=True)
+    st.markdown('<p class="lede">A local rule-based assistant using demonstration scheme and case data. No live AI or government systems are connected.</p>', unsafe_allow_html=True)
     history = db.list_interactions(str(citizen["citizen_id"]), "assistant")
     for item in history:
         with st.chat_message("user"):
@@ -420,7 +420,11 @@ def _assistant(citizen: dict[str, object], language: str) -> None:
     prompt = st.chat_input("Ask about schemes, documents, or a request")
     if prompt:
         try:
-            response = rules.assistant_reply(prompt, language)
+            response = rules.assistant_reply(
+                prompt,
+                language,
+                db.list_cases(str(citizen["citizen_id"])),
+            )
             db.log_interaction(str(citizen["citizen_id"]), "assistant", prompt, response)
             st.rerun()
         except ValueError as error:
@@ -450,7 +454,10 @@ def _claim_check(citizen: dict[str, object]) -> None:
                     uploaded_claim.getvalue(),
                 )
                 submitted_text = "\n".join(part for part in (submitted_text, document_text) if part)
-            result = rules.verify_claim(submitted_text)
+            result = rules.verify_claim(
+                submitted_text,
+                str(st.session_state["language"]),
+            )
             status = str(result["status"])
             db.log_interaction(
                 str(citizen["citizen_id"]),

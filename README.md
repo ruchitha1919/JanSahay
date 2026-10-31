@@ -1,30 +1,29 @@
-# 🌾 JanSahay – AI-Powered Citizen Assistance Platform
+# 🌾 JanSahay – Local Citizen Assistance Prototype
 
 ## 📌 Project Overview
 
-JanSahay is an AI-powered citizen assistance platform designed to help farmers, rural communities, and people with limited digital literacy access government schemes and public services more easily.
+JanSahay is a local demonstration prototype designed to help farmers, rural communities, and people with limited digital literacy explore sample scheme guidance and public-service workflows.
 
-The platform simplifies scheme discovery, eligibility checking, document guidance, claim verification, and citizen assistance through a multilingual and voice-enabled interface.
+The prototype demonstrates scheme discovery, eligibility checks, document guidance, claim checks, and citizen assistance through a multilingual interface. It does not connect to an AI model, a government system, or a live fact-checking source.
 
 ## 🎯 Project Objectives
 
 - Make government schemes and public services more accessible to rural citizens.
 - Help farmers understand scheme eligibility and application requirements.
 - Provide assistance in English, Hindi, and Telugu.
-- Simplify access to government-related information through AI-powered assistance.
-- Enable voice-based interaction for people with limited digital literacy.
+- Provide deterministic, locally grounded assistance without implying a live AI service.
+- Read visible page content aloud when the browser has a voice for the selected language.
 - Help citizens identify potentially fake or suspicious government-related messages and claims.
 
 ## ✨ Key Features
 
 - **Multilingual Interface:** Supports English, Hindi, and Telugu, with language selection at the initial login screen. The selected language is maintained throughout the application.
 - **Scheme Finder:** Helps citizens discover government schemes and view eligibility criteria specific to each scheme.
-- **AI Assistant:** Provides guidance and answers to citizen-related queries.
-- **Claim Verification:** Allows users to submit government-related messages or claims and receive one of four outcomes: Verified, False, Unverified, or Suspicious.
+- **Local Assistant:** Uses the configured demonstration schemes and the signed-in citizen's saved cases to answer supported scheme, document, service, and request questions. Unsupported questions are acknowledged; exchanges are retained in the local SQLite interaction history. This is deterministic rule-based guidance, not AI.
+- **Claim Check:** Compares submitted text with a small set of facts about this local prototype and deterministic scam-wording rules. It returns Verified, False, Unverified, or Suspicious only where those local rules support that result. Unknown claims remain Unverified; results are not official verification and do not consult external sources.
 - **Document Assistance:** Provides document-related guidance and scheme-specific checklists.
 - **Request Tracking:** Allows citizens to track their assistance requests and progress through different stages.
-- **Voice Assistant:** Provides microphone access across application pages, supporting speech-to-text and text-to-speech where browser capabilities are available.
-- **Multilingual Voice Support:** Supports voice interaction in English, Hindi, and Telugu based on the selected language.
+- **Page Reader:** Reads visible main-page text on login, citizen, and volunteer screens in the selected English, Telugu, or Hindi locale. It excludes navigation and hidden content, cancels playback when stopped or when page content changes, and requires a browser voice matching the selected language. It does not accept microphone input or use a different-language fallback voice.
 - **Telephone Assistance:** Demonstrates an IVR-based assistance experience with a clickable phone number and simulated call interaction.
 - **Service Directory:** Helps citizens explore relevant assistance services.
 - **Reminders:** Helps citizens keep track of important follow-ups.
@@ -109,9 +108,9 @@ Open your browser and visit:
 
 ## 📝 Project Status
 
-JanSahay is currently a working prototype demonstrating multilingual citizen assistance, scheme discovery, claim verification, document guidance, request tracking, and voice-based interactions.
+JanSahay is currently a working prototype demonstrating multilingual citizen assistance, scheme discovery, local claim checks, document guidance, request tracking, and browser-based page reading.
 
-Some features use simulated workflows. The application is not an officially integrated government service, and its verification results do not constitute official government confirmation.
+The assistant, verification, schemes, office listings, and telephone behaviors are local demonstrations. No paid or external AI/verification APIs are used. Browser speech is available only when the user's browser supplies a matching language voice; without one, the reader reports that speech is unavailable instead of using a mismatched voice. The application is not an officially integrated government service, and claim results do not constitute official government confirmation.
 
 ## 🚀 Live Demo
 
